@@ -36,10 +36,10 @@ Twitter is an online social networking service that enables users to send and re
 In order to get access to the twitter data firstly you must have a twitter account. Using that twitter account you have to create an app and then twitter will provide you with four credentials which are then required to access the API.
 We will send these credentials to *setup_twitter_oauth* method of OAuth library to authenitcate our requests.
 ```{r include=FALSE}
-API_key = 'IBXkDXQk9x9XeLxgRXf8rM9NR'
-API_Secret = 'EYHqJkU06n2xISHzY65qKI4jEDyN1FXMfnnWqwGL83pNOPQDnw'
-access_token = '759372425679208448-hdKnPZn2o5rdgyALLQURrXKyjl9ZSiU'
-access_token_secret = 'PjTqKjbH6m82S3cEVkVTKOtgGYRM5ktgbmtu9wbGrVvsy'
+API_key = ''
+API_Secret = ''
+access_token = ''
+access_token_secret = ''
 ```
 
 ```{r}
