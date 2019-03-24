@@ -1,0 +1,307 @@
+---
+title: "Semantic Analysis on Twitter Profile 'Elon Musk'"
+author: "Sheheryar Ali Bhatti - 150912"
+date: "March 6, 2019"
+output:
+  word_document: default
+  html_document: default
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r cars, include=FALSE}
+library(twitteR)
+library(ROAuth)
+library(SnowballC)
+library(tm)
+library(RColorBrewer)
+library(ggplot2)
+library(wordcloud)
+library(graph)
+library(Rgraphviz)
+library(topicmodels)
+library(data.table)
+library(devtools)
+library(sentiment)
+```
+# Introduction
+Twitter is an online social networking service that enables users to send and read short messages called *'Tweets'*. It has more than 300 million active users. In this document we will try to interpret the sentiments of technology entrepreneur and engineer Elon Musk from twitter using the Twitter Data API.
+
+# Accessing Twitter API
+In order to get access to the twitter data firstly you must have a twitter account. Using that twitter account you have to create an app and then twitter will provide you with four credentials which are then required to access the API.
+We will send these credentials to *setup_twitter_oauth* method of OAuth library to authenitcate our requests.
+```{r include=FALSE}
+API_key = 'IBXkDXQk9x9XeLxgRXf8rM9NR'
+API_Secret = 'EYHqJkU06n2xISHzY65qKI4jEDyN1FXMfnnWqwGL83pNOPQDnw'
+access_token = '759372425679208448-hdKnPZn2o5rdgyALLQURrXKyjl9ZSiU'
+access_token_secret = 'PjTqKjbH6m82S3cEVkVTKOtgGYRM5ktgbmtu9wbGrVvsy'
+```
+
+```{r}
+setup_twitter_oauth(API_key,API_Secret,access_token,access_token_secret)
+```
+
+Now we have successfully authenticated with Twitter Data API and can access the tweets.
+
+# Retrieving Tweets
+
+## 1) Tweets 
+We want to do sentiment analysis on Elon Musk and try to interpret the sentiments. Since we want the tweets for a particular profile we will make use of *userTimeline* function and pass or profile name as first argument and no. of tweets as second argument.
+
+```{r}
+tweets<-userTimeline("elonmusk",n=500)
+```
+
+This returns the tweets in the form of list, as we want to perform different operation on this data we will convert this into data frame which will make easier for us to perform different operations.
+
+```{r}
+tweets.df <- twListToDF(tweets)
+
+tweets.df[1, c("id", "created", "screenName", "replyToSN", "favoriteCount", "retweetCount", "longitude", "latitude", "text")]
+writeLines(strwrap(tweets.df$text[1], 60))
+```
+
+# Data Preprocessing
+Data preprocessing is very important step.To perform any kind of algorithm fisrtly data must be clean in order to create better observations. 
+
+Extract only the text of the tweets which is available in the *text* column of the dataset.
+
+```{r}
+data<-tweets.df$text
+```
+
+## 1) Corpus
+We are dealing with text data so we will create a corpus of or tweets. A corpus or text corpus is a large and structured set of texts. Firstly we will vectorize or data i.e it will create a document for each tweet and then pass these document to the *Corpus* function.
+
+```{r}
+myCorpus <- Corpus(VectorSource(data))
+```
+
+## 2) Removing Numbers
+Just like *apply* function for list we have *tm_map* function to apply a specific function on each document.
+
+Numbers donot have any effect on the sentiment of the document so we will remove the numbers from each document.
+
+```{r}
+myCorpus <- tm_map(myCorpus, removeNumbers)
+```
+
+## 3) Removing Url
+Some tweets also consist of URLs, these urls are also not required for the sentiment analysis, so we will also remove these. We will write a function in which if the text of the document matches the Regex for Url we will remove that part of the document.
+
+```{r}
+removeURL <- function(x) gsub("http[^[:space:]]*", "", x)
+myCorpus <- tm_map(myCorpus, content_transformer(removeURL))
+```
+
+## 3) Removing Punctuations
+Punctions are added to the sentence to make it easy for readers to read the document and understand, but they donot have any meaning. So we will remove punctuations, similarly we will create a Regex for punctuation and remove the part of the documnet which matches the regex.
+
+```{r}
+removeNumPunct <- function(x) gsub("[^[:alpha:][:space:]]*", "", x)
+myCorpus <- tm_map(myCorpus, content_transformer(removeNumPunct))
+```
+
+## 4) Lowercase 
+To make ur data consistent we will lower case the complete document.
+
+```{r}
+myCorpus <- tm_map(myCorpus, content_transformer(tolower))
+```
+
+## 5) Stopwords
+Stopwords area use to build the structure of a sentance, they have no meaning. Thus we will remove all the stopword from each document. Since some of the words maybe considered as stop word but are of great meaning in or document forexample: 
+So will exclude these words and remove all other stop words from each document.
+
+```{r}
+myStopwords <- c(setdiff(stopwords('english'), c("tech", "ai")), "data")
+myCorpus <- tm_map(myCorpus, removeWords, myStopwords)
+```
+
+## 6) WhiteSpace
+Some document may have some of unnecesory whitespace and tab spaces, we will remove them from the document.
+
+```{r}
+myCorpus <- tm_map(myCorpus, stripWhitespace)
+```
+
+## 7) Diplaying Clean Data
+After doing all of the preprocessing we will create a copy of or corpus and lets have a look and see how our documents look after applying preprocessing.
+
+```{r}
+writeLines(strwrap(myCorpus[[1]]$content, 60))
+```
+
+# Word Frequency
+Word frequency gives us the better understanding of what words are common among tweets and which word used how many times in a tweet. We will create a function which takes a corpus as first argument and the word (for which you want to know the frequency) as second argument and returns the frequency of the word.
+
+## 1) Frequency Count
+```{r}
+wordFreq <- function(corpus, word) {
+results <- lapply(corpus,
+function(x) { grep(as.character(x), pattern=paste0("nn<",word)) })
+sum(unlist(results))
+}
+```
+
+## 2) Replacing Words
+Some people use abbreviations and short notation for words, we will create function that replaces those jargons with full form of the word.
+
+```{r}
+replaceWord <- function(corpus, oldword, newword) {
+tm_map(corpus, content_transformer(gsub),
+pattern=oldword, replacement=newword)
+}
+```
+
+## 3) Term Document Matrix
+Term Document Matrix is another useful technique to get great insights about our data. It is a matrix as documnet i.e tweets in our case as rows and word as columns and a numerc value for each cell which represents the frequency of the word in the document.
+
+```{r}
+tdm <- TermDocumentMatrix(myCorpus) 
+inspect(tdm[1:50, 1:3])
+idx <- which(dimnames(tdm)$Terms %in% c("tesla", "ai", "tech"))
+inspect(tdm[idx, 1])
+```
+We can see the most frequent word using the *findFreqTerms* which have lowest frequency of 20.
+
+```{r}
+freq.terms <- findFreqTerms(tdm, lowfreq = 20)
+```
+
+We have a word in each column, if we row sum the columns we will get the frequency of each word in complete corpus. Words having frequency lower than 10 are not of our interest so will get rid of them, and then convert this into a dataframe.
+
+```{r}
+term.freq <- rowSums(as.matrix(tdm))
+term.freq <- subset(term.freq, term.freq >= 10)
+df <- data.frame(term = names(term.freq), freq = term.freq)
+```
+
+## 4) Freuncy Bar Graph
+The best way to get see data is to visualize it with graph. Bar grapgh is used to see the frequency of the corresponding variable.
+
+```{r}
+library(ggplot2)
+windows()
+ggplot(df, aes(x=term, y=freq)) + geom_bar(stat="identity") +
+xlab("Terms") + ylab("Count") + coord_flip() +
+theme(axis.text=element_text(size=7))
+```
+
+We can see leaders have very high frequency in our corpus.
+
+# Word Cloud
+
+Worldcloud is a a visible mass of condensed word varying size with there frequency. Firstly we will convert it into a matrix and then sort the word in a decerasing order of frequency and then plot the wordcloud.
+
+```{r}
+m <- as.matrix(tdm)
+word.freq <- sort(rowSums(m), decreasing = T)
+
+pal <- brewer.pal(9, "BuGn")[-(1:4)]
+
+windows()
+wordcloud(words = names(word.freq), freq = word.freq,min.freq = 3, random.order = F, colors = pal)
+
+```
+
+## 1) Assosiations
+We can find assosiation between words using the *findAssocs* function. Pass the term document matrix as first, the word you want to find assosiation for as second and minimum assosiation as third argument.
+
+```{r}
+findAssocs(tdm, "tesla", 0.2)
+findAssocs(tdm, "spacex", 0.2)
+```
+
+## 2) Assosiation Graph
+We can also plot a graph that shows assosiation between the words, greater this assosiation thicker the link between them.
+
+```{r}
+library(Rgraphviz)
+windows()
+plot(tdm, term = freq.terms, corThreshold = 0.5, weighting = F)
+```
+
+# Topic Modeling
+
+Topic modeling is a type of statistical model for discovering the abstract "topics" that occur in a collection of documents. We can find hidden semantic structures from the tweets. For this purpose we will use R package called *topicmodels*
+
+```{r}
+dtm <- as.DocumentTermMatrix(tdm)
+library(topicmodels)
+```
+
+Each row of the input matrix needs to contain at least one non-zero entry
+
+```{r}
+rowTotals <- apply(dtm , 1, sum)
+dtm.new   <- dtm[rowTotals> 0, ] 
+```
+
+Now we will pass this dtm object to *LDA()* and pass 7 to divide the dataset into total of 7 topics. In order to see the first few terms of the Topic we will call the *term()* function on lda as first argument and no of terms as second.
+To see the topic identified we will use *topic()* function, and then plot a density graph to visualize or topics.
+
+```{r}
+lda <- LDA(dtm.new, k = 7)
+term <- terms(lda, 3)
+(term <- apply(term, MARGIN = 2, paste, collapse = ", "))
+
+topics <- topics(lda)
+
+topics <- data.frame(date=as.IDate(tweets.df$created[c(1:200,1)]), topic=topics[c(1:200,1)])
+library(data.table)
+
+windows()
+ggplot(topics, aes(date, fill = term[topic])) +
+geom_density(position = "stack")
+```
+
+# Semantic Analysis
+Finally we will do semantic analysis on the tweets and see what are the semantics of the Elon Musk profile.
+
+We will use *semantic* package in R for this purpose and pass the tweets to it. This package classifies the tweets into 3 sentiments negative,neutral or positive.
+
+```{r}
+library(sentiment)
+sentiments <- sentiment(tweets.df$text)
+```
+
+This returns us a dataframe with 3 attributes tweets, polarity and language, polarity is the attribute which represents the sentiment of the corresponding tweet.
+To display the total tweets in each sentiment we will use *table* function.
+
+```{r}
+table(sentiments$polarity)
+```
+
+We can see from the above output that we have 2,211 and 48 negative, neutral and positive tweets repectively.
+
+Now we will introduce a new attribute in sentiments dataframe *score* and will map positive tweets to 1, negative tweets to -1, and neutral to 0.
+
+```{r}
+sentiments$score <- 0
+sentiments$score[sentiments$polarity == "positive"] <- 1
+sentiments$score[sentiments$polarity == "negative"] <- -1
+```
+
+We will create another variable date to store the creation date of the tweets.
+
+```{r}
+sentiments$date <- as.IDate(tweets.df$created)
+```
+
+Now we will plot the graph and visualize how the sentiments of the people have changed over time. On the x-axis we have date and the y-axis we have the polarity of the tweet.
+
+```{r}
+result <- aggregate(sentiments$score ~ sentiments$date, data = sentiments, sum)
+windows()
+plot(result, type = "l")
+```
+
+#Conclusion
+
+After processing the tweets of technology entrepreneur and engineer Elon Musk, We can see that most of the tweets of Elon Musk have a neutral sentiment, almost none of the tweets have negative sentiment. 
